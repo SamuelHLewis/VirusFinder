@@ -17,7 +17,7 @@ DIAMOND
 # Usage
 Basic usage is:
 ```bash
-python3 VirusFinder.py -l leftreads.fq -r rightreads.fq -g hostgenome -v virusdatabase -n nrdatabase
+VirusFinder.py -l leftreads.fq -r rightreads.fq -g hostgenome -v virusdatabase -n nrdatabase
 ```
 VirusFinder accepts the following additional arguments (all of which have defaults already set):
 
