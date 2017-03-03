@@ -93,10 +93,10 @@ else:
 		sys.exit(0)
 
 # function to map reads using bowtie2 (requires bowtie2 mapping databases to exist already, discards unmapped reads by default)
-def BowtieMapper(InFile1,InFile2,Index,MappedOut,UnmappedOut,Cores=1):
+def BowtieMapper(InFile1,InFile2,Index,MappedOut,UnmappedOut,cores=1):
 	# map fastq reads
 	print('Mapping ' + InFile1 + ' & ' + InFile2 + ' to index ' + Index)
-	cmd = 'bowtie2 --fast -p ' + str(Cores) + ' -q -x ' + Index + ' -1 ' + InFile1 + ' -2 ' + InFile2 + ' -S ' + MappedOut + '.sam --un-conc ' + UnmappedOut
+	cmd = 'bowtie2 --fast -p ' + str(cores) + ' -q -x ' + Index + ' -1 ' + InFile1 + ' -2 ' + InFile2 + ' -S ' + MappedOut + '.sam --un-conc ' + UnmappedOut
 	subprocess.call(cmd,shell=True)
 	# rename unmapped read files
 	shutil.move(UnmappedOut+'.1',UnmappedOut+'.1.fq')
@@ -105,7 +105,7 @@ def BowtieMapper(InFile1,InFile2,Index,MappedOut,UnmappedOut,Cores=1):
 	return(UnmappedOut+'.1.fq',UnmappedOut+'.2.fq')
 
 # function to assembly paired-end reads with Trinity
-def TrinityAssembler(InFile1,InFile2,MinContigLength,Cores=1):
+def TrinityAssembler(InFile1,InFile2,MinContigLength,cores=1):
 	# remove TrinityAssembly dir if already exists and replace it with new (blank) dir
 	if os.path.isdir('TrinityAssembly') is True:
 		shutil.rmtree('TrinityAssembly')
@@ -113,7 +113,7 @@ def TrinityAssembler(InFile1,InFile2,MinContigLength,Cores=1):
 	os.makedirs('TrinityAssembly')
 	# assemble NonHost reads
 	print('Assembling ' + InFile1 + ' & ' + InFile2)
-	cmd = 'Trinity --left ' + InFile1 + ' --right ' + InFile2 + ' --seqType fq --max_memory 50G --min_contig_length ' + str(MinContigLength) + ' --output ./TrinityAssembly --CPU ' + str(Cores)
+	cmd = 'Trinity --left ' + InFile1 + ' --right ' + InFile2 + ' --seqType fq --max_memory 10G --min_contig_length ' + str(MinContigLength) + ' --output ./TrinityAssembly --CPU ' + str(cores)
 	subprocess.call(cmd,shell=True)
 	# extract longest ORF from each transcript, rename this file, and move other files
 	cmd = 'TransDecoder.LongOrfs -t ./TrinityAssembly/Trinity.fasta -m ' + str(int(MinContigLength/3))
@@ -124,20 +124,20 @@ def TrinityAssembler(InFile1,InFile2,MinContigLength,Cores=1):
 	return('./Trinity_min50.fasta')
 
 # function to assembly paired-end reads with Trinity
-def BLASTer(InFile,BlastDB,OutFile,Cores=1):
+def BLASTer(InFile,BlastDB,OutFile,cores=1):
 	# blastx
-	cmd = 'diamond blastx -p ' + str(Cores) + ' -d ' + BlastDB + ' -q ' + InFile + ' -o ' + OutFile + ' -f 6 qseqid evalue length stitle'
+	cmd = 'diamond blastx -p ' + str(cores) + ' -d ' + BlastDB + ' -q ' + InFile + ' -o ' + OutFile + ' -f 6 qseqid evalue length stitle'
 	subprocess.call(cmd,shell=True)
 	return(OutFile)
 
 # master function to identify and extract viral contigs
-def VirusFinder(InFile1,InFile2,HostGenome,VirusDB,nrDB,MinContigLength,Cores=1):
+def VirusFinder(InFile1,InFile2,HostGenome,VirusDB,nrDB,MinContigLength,Threads=1):
 	# map reads to host genome and keep non-host reads
-	NonHost1,NonHost2 = BowtieMapper(InFile1=InFile1,InFile2=InFile2,Index=HostGenome,MappedOut='Host',UnmappedOut='NonHost',Cores=Cores)
+	NonHost1,NonHost2 = BowtieMapper(InFile1=InFile1,InFile2=InFile2,Index=HostGenome,MappedOut='Host',UnmappedOut='NonHost',cores=Threads)
 	# assemble non-host reads
-	Contigs = TrinityAssembler(InFile1=NonHost1,InFile2=NonHost2,MinContigLength=MinContigLength,Cores=Cores)
+	Contigs = TrinityAssembler(InFile1=NonHost1,InFile2=NonHost2,MinContigLength=MinContigLength,cores=Threads)
 	# blast assembled contigs against NCBI viruses
-	VirusBLASTOut = BLASTer(InFile='Trinity_min50.fasta',BlastDB=VirusDB,OutFile='ncbi_viruses.out',Cores=Cores)
+	VirusBLASTOut = BLASTer(InFile='Trinity_min50.fasta',BlastDB=VirusDB,OutFile='ncbi_viruses.out',cores=Threads)
 	# check whether potential viruses have been found
 	fileinfo = os.stat(VirusBLASTOut)
 	if fileinfo.st_size == 0:
@@ -153,7 +153,7 @@ def VirusFinder(InFile1,InFile2,HostGenome,VirusDB,nrDB,MinContigLength,Cores=1)
 		cmd = 'cat ' + VirusBLASTOut + ' | cut -f 1 | sort | uniq | grep -A 1 --no-group-separator -F -f - Trinity_min50.fasta > candidates.fasta'
 		subprocess.call(cmd,shell=True)
 		# blast the viral candidates against NCBI nr
-		BLASTer(InFile='candidates.fasta',BlastDB=nrDB,OutFile='candidates_ncbi_nr.out',Cores=Cores)
+		BLASTer(InFile='candidates.fasta',BlastDB=nrDB,OutFile='candidates_ncbi_nr.out',cores=Threads)
 		# grab all candidate names and print to temp file
 		cmd = 'grep ">" candidates.fasta | grep -o "^[^ ]*" | sed \'s/>//\' > candnames.txt'
 		subprocess.call(cmd,shell=True)
@@ -204,4 +204,5 @@ def VirusFinder(InFile1,InFile2,HostGenome,VirusDB,nrDB,MinContigLength,Cores=1)
 			print(str(count) + ' verified viruses found')
 			return(str(count) + ' verified viruses found')
 
-VirusFinder(InFile1=InFile1,InFile2=InFile2,HostGenome=GenomeDB,VirusDB=VirusDB,nrDB=nrDB,MinContigLength=MinContigLength,Cores=Cores)
+VirusFinder(InFile1=InFile1,InFile2=InFile2,HostGenome=GenomeDB,VirusDB=VirusDB,nrDB=nrDB,MinContigLength=MinContigLength,Threads=Cores)
+
